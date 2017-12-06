@@ -407,7 +407,7 @@ In other words, the geometric multiplicity of $\lambda$ is the dimension of the 
 
 Also recall that the <i><u>algebraic multiplicity</i></u> of $\lambda$ is simply the number of times the eigenvalue $\lambda$ appears in the spectrum of $M$
 
-Because our Laplacian matrix $L_G$ is diagonalizable (again applying the Spectral Theorem here), it turns out that the algebraic multiplicity is equal to the geomeetric multiplicity, so from now on, we will simply use the term <i><u>multiplicity</i></u>.
+Because our Laplacian matrix $L_G$ is diagonalizable (again applying the Spectral Theorem here), it turns out that the algebraic multiplicity is equal to the geometric multiplicity, so from now on, we will simply use the term <i><u>multiplicity</i></u>.
 
 With that, on to the next proof.
 
