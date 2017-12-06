@@ -40,7 +40,8 @@ spectral_clustering <- function(data, sigma, k){
   
   # cluster the k-dimensional points (rows of the matrix of eigenvectors we just stored)
   #   using k-means with the same number (k) clusters
-  relevant_eigenvectors$color <- kmeans(relevant_eigenvectors, centers = k)$cluster
+  # and return the vector of labels
+  return(kmeans(relevant_eigenvectors, centers = k)$cluster)
 }
 
 

@@ -78,13 +78,9 @@ half_moons_sc <-
     axis.text.x = element_blank(),
     axis.text.y = element_blank(),
     axis.ticks = element_blank())
-# 
-# library(jpeg)
-# anteater <- readJPEG("./anteater.jpg")
 
 circles_sc <-
   ggplot(kmeans_mean_circles) +
-  # background_image(anteater) +
   geom_point(aes(y = y, x = x, color = factor(color_sc)), alpha = 0.8, size = 0.4) +
   xlim(0, 6) +
   ylim(0, 6) +
