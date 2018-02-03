@@ -1,0 +1,795 @@
+# Spectral Clustering
+Gary Koplik  
+Fall, 2017  
+
+<script>
+   $(document).ready(function() {
+     $head = $('#header');
+     $head.prepend('<img src=\"top_figure.png\" style=\"float: right;width: 250px;\"/>')
+   });
+</script>
+
+Clustering algorithms are designed to answer a fairly straightforward problem:
+
+<br>
+
+<center> <i> <b>
+Given data, what is the best way to separate data into K clusters?
+</b> </i> </center>
+
+<br>
+
+Now "best" is a subjective qualifier that is highly dependent on the context, so clustering algorithms work around this by assuming what's best. There's nothing wrong with making assumptions to allow for better answers given those assumptions, but we must also be sure not to forget about those assumptions because they might not hold in the context of our implementation.
+
+In this report, I will first discuss the K-means algorithm, which is both fairly straightforward and commonly used. I will then show some simple toy examples that "break" K-means. This will motivate the use of spectral clustering, a more mathematically complicated algorithm that can handle these toy examples.
+
+<br>
+
+# K-means Clustering
+
+The goal of K-means is to split up a data set into $k$ groups based on minimizing the sum of squared distances between each point and the center of its group.
+
+<br>
+
+## The Math Behind K-means Clustering
+
+Let's put this in more mathematical notation:
+
+Suppose we have a set of points $S \subseteq \mathbb{R}^D$ and let $k \in \mathbb{Z}^+$
+
+Define $C_1, C_2, \ldots, C_k$ to be a <i> <u>partition</u></i> of $S$ when:
+$$C_1 \cup C_2 \cup \cdots \cup C_k = S \text{ and } C_i \cap C_j = \emptyset \hspace{2ex} (i \neq j)$$
+
+Next, define the <i><u>center</i></u> $(\mu_j)$ of each $C_j$ to be the mean point in each $C_j$
+
+We are trying to find the partition that minimizes the sum of squared distances between each point and the center of its assigned cluster $C_j$, or, in other words, we are minimizing the following <i><u> cost</u></i> of this partition:
+$$cost(C_{1:k}, \mu_{1:k})
+= \sum_{j = 1}^k \sum_{x \in C_j} || x - \mu_j ||^2$$
+
+Before discussing the K-means algorithm, we need one more definition.
+
+The <i><u> Voronoi Region</u></i> corresponding to a point $\mu_i \in \mathbb{R}^D$ is the set of all points closest to $\mu_i$, or:
+$$V(\mu_i) = \{ y \in \mathbb{R}^D : ||y - \mu_i|| \leqslant ||y - \mu_j|| \hspace{2ex} \forall j \neq i \}$$
+
+This algorithm is based on two important ideas.
+
+First, suppose we have some fixed partition of $S$ and wanted to pick the best points for minimizing cost. Clearly the best points for minimizing distance within each $C_j$ are the $\mu_j$'s.
+
+Second, suppose, we have $k$ fixed points $z_1, z_2, \ldots, z_k$ and we want to find the best partition of $S$ into $k$ parts. Then the best partition will be defining each $C_i$ to be all of the points in the Voronoi Region of $z_i$, or:
+$$C_i = V(z_i) \cap S$$
+
+As a simple exercise in thinking about why this second claim is true, suppose we start with points assigned based on Voronoi regions, and then we take a point $x$ in the Voronoi region of $z_i$ and put it in $C_j \hspace{1ex} (j \neq i)$
+
+By the definition of Voronoi region, $x$ will be farther from $z_j$ than $z_i$, thus increasing our cost.
+
+<br>
+
+## Implementing K-Means Clustering
+
+Now, we are ready to discuss an actual algorithm. It is important to note that K-means is not normally run to find the global cost minimizing $\mu_i$'s but rather finds a <i> local </i> minimium cost.
+
+A common way K-means is initialized is simply with $k$ random seed points (with $k$ specified by the user).
+
+Then the algorithm alternates between two actions:
+
+1) Assign each of the points in the Voronoi region of $z_j$ to $C_j$ for each of the $k$ seed points:
+
+$$C_j \leftarrow V(z_j) \cap S$$
+
+2) Move each $z_j$ to the mean value of each $C_j$:
+$$z_j \leftarrow mean(C_j)$$
+
+
+This sequence repeats as long as cost is lowered between steps by more than some $\epsilon$ threshold (and as long as we're below some maximum number of allowable iterations).
+
+There are certainly solutions where K-means works well. Take the following data for example:
+
+
+
+
+
+<img src="index_files/figure-html/unnamed-chunk-2-1.png" style="display: block; margin: auto;" />
+
+Given what we've discussed, as expected, K-means works well here.
+
+<img src="index_files/figure-html/unnamed-chunk-3-1.png" style="display: block; margin: auto;" />
+
+There is a fundamental assumption in K-means though that this example hides from, and that's the fact that <i>K-means "thinks" clusters of data radiate around some center point.</i> Although this seems pretty natural, this is actually a strong assumption.
+
+So let's break that assumption with some well-known examples:
+
+<img src="index_files/figure-html/unnamed-chunk-4-1.png" style="display: block; margin: auto;" />
+
+In both of these examples, there are two "natural" clusters we'd like to see for both, but as we can see, K-means performs poorly on both:
+
+<img src="index_files/figure-html/unnamed-chunk-5-1.png" style="display: block; margin: auto;" />
+
+This should not be surprising though. For both of these, there is clearly no way to place two points somewhere on the plane that would perform better. As nice as it is to take advantage of Voronoi regions when partitioning our data, it doesn't generalize for other shapes of clusters. spectral clustering, however, can handle these examples well.
+
+<br>
+
+# Spectral Clustering
+
+I'm going to first focus on the math with respect to breaking data into two clusters, but I will generalize later. I will only be going through <i>unnormalized</i> spectral clustering. For more information on other spectral clustering methods, see [von Luxburg (2007)](https://arxiv.org/pdf/0711.0189.pdf).
+
+## Definitions 
+
+To explain this in detail, we first need <i> a lot </i> of terminology.
+
+Let $G = (V, E, W)$ be an undirected, weighted graph, with $n$ vertices (e.g. the <i><u>cardinality</i></u> of $V$, $|V|$,  is $n$)
+
+Define the <i><u>weight matrix</u></i> $W_G$ of $G$ to be an $n$ x $n$ matrix where $w_{ij}$ represents the weight between vertex $v_i$ and vertex $v_j$
+
+We will make three assumptions about these weights:
+
+* $w_{ij} \geqslant 0$
+* $w_{ii} = 0$
+* $w_{ij} = w_{ji}$
+
+Given some $v_i \in V$, define the <u><i>weighted degree</u></i> of $v_i$ as the sum of weights connected directly to $v_i$:
+$$d(v_i) = d_i = \sum_{j = 1}^n w_{ij}$$
+
+Define the <u><i>degree matrix</u></i> $D_G$ of $G$ to be a diagonal matrix where the $i^{th}$ term on the diagonal is $d_i$:
+
+$$D_G =
+\begin{bmatrix}
+d_1 & & & \\
+& d_2 & & \\
+& & \ddots & \\
+& & & d_n
+\end{bmatrix}$$
+<br>
+
+Define the <u><i>Laplacian matrix</u></i> $L_G$ of $G$ to be:
+$$L_G = D_G - W_G$$
+
+Suppose, $A, B \subseteq V$
+
+Define $W(A, B)$ to be the sum of weights connecting $A$ to $B$:
+$$W(A, B) = \sum_{i \in A, j \in B} w_{ij}$$
+
+Given $A \subseteq V$, define the <u><i>cut</u></i> of $A$ to be:
+$$cut(A) = W(A, \bar{A})$$
+
+where $\bar{A}$ is the elements in $V$ that are not contained in $A$
+
+Note that $cut(A) = cut(\bar{A})$
+
+Let's pause from this barrage of definitions for a moment. Remember we're thinking about how to "best" break a graph into $k$ clusters.
+
+One strategy is to minimize the sum of the weights that we cut through between points when separating the graph. Perhaps we could try finding the minimum $cut(A)$:
+$$\underset{A \subseteq V}{argmin} \hspace{1ex} cut(A)$$
+
+It turns out this is easy to solve computationally, but unfortunately for us, in practice, this tends to simply separate outliers from the rest of the graph.
+
+What if we instead try to make $W(A, \bar{A})$ small <i>and</i> keep the cardinality of the two components balanced?
+
+Define the <u><i>RatioCut</i></u> of $A$ to be:
+$$RatioCut(A) = cut(A) \cdot \bigg( \frac{1}{|A|} + \frac{1}{|\bar{A}|} \bigg)
+= cut(A) \cdot \bigg( \frac{1}{|A|} + \frac{1}{n - |A|} \bigg)$$
+
+Note that $\bigg( \frac{1}{|A|} + \frac{1}{|\bar{A}|} \bigg)$ achieves a minimum when $|A| \approx \frac{n}{2}$
+
+So what if we instead take the $\underset{A \subseteq V}{argmin} \hspace{1ex} RatioCut(A)$ ?
+
+Now we've got something that sounds more reasonable, but unfortunately for us, this problem is [NP-hard](https://en.wikipedia.org/wiki/NP-hardness).
+
+It turns out though that we can work around this issue. With a slight relaxation of this problem, we'll be able to take advantage of the eigenvalues and eigenvectors of the Laplacian to help us, but in order to show that, we need a few more definitions and then a lot of proofs.
+
+Graphs are abstract objects that don't have "locations" in the Euclidean sense. We will thus keep functions that map vertices to real numbers $f: V \mapsto \mathbb{R}$
+
+$$f =
+\begin{bmatrix}
+f(v_1) \\
+f(v_2) \\
+\vdots \\
+f(v_n) \\
+\end{bmatrix}
+=
+\begin{bmatrix}
+f_1 \\
+f_2 \\
+\vdots \\
+f_n \\
+\end{bmatrix}$$
+
+
+Let $A \subseteq V$. Define the indicator function:
+$$ \boldsymbol{1}_A(i) =
+\begin{cases}
+1 & V_i \in A \\
+0 & \text{otherwise}
+\end{cases}$$
+
+Finally, since the Laplacian matrix $L_G$ is symmetric and real, by the [Spectral Theorem](http://www.math.mtu.edu/~msgocken/ma5630spring2003/lectures/spectral/spectral/node2.html), the eigenvalues $\lambda_1, \lambda_2, \ldots, \lambda_n$ are all real and greater than or equal to 0. We will index them in <i> increasing </i> order:
+$$ 0 \leqslant \lambda_1 \leqslant \lambda_2 \leqslant \cdots \leqslant \lambda_n$$
+
+## Proofs with 2 Clusters
+
+<b><u>Claim</b></u>
+
+$f^T L f = \frac{1}{2} \sum_{i, j} w_{ij}(f_i - f_j)^2$
+
+<i> Proof </i>
+
+$$\begin{aligned}
+&L =
+	\begin{bmatrix}
+	\sum_j w_{1j}	&	-w_{12}	&	-w_{13}	&	\cdots	&	-w_{1n} \\
+	-w_{21}	&	\sum_j w_{2j}	&	-w_{32}	&	\cdots	&	-w_{2n} \\
+	\vdots	&					&	\ddots	&			&	\vdots \\
+	\vdots	&					&			&	\ddots	&	-w_{(n-1)n} \\
+	-w_{n1}	&		\cdots		&	\cdots	&			& \sum_j w_{nj} \\
+	\end{bmatrix} \\ \\
+&Lf = L \begin{bmatrix}
+			f_1 \\
+			\vdots \\
+			f_n
+		\end{bmatrix}
+	= \begin{bmatrix}
+		f_1 \sum_j w_{1j} - \sum_{j = 2}^n f_j w_{1j} \\
+		\vdots \\
+		f_n \sum_j w_{nj} - \sum_{j = 2}^n f_j w_{nj} \\
+	\end{bmatrix} \\ \\
+&\text{Since } w_{ii} = 0 \text{, we can rewrite this as} \\ \\
+&Lf = 
+	\begin{bmatrix}
+		f_1 \sum_j w_{1j} - \sum_j f_j w_{1j} \\
+		\vdots \\
+		f_n \sum_j w_{nj} - \sum_j f_j w_{nj} \\
+	\end{bmatrix} \\ \\
+&f^TLf = \begin{bmatrix}
+			f_1	&	\cdots	&	f_n
+		 \end{bmatrix}
+		 LF \\ \\
+&= f_1^2 \sum_j w_{1j} - f_1 \sum_j f_j w_{1j} +
+	f_2^2 \sum_j w_{2j} - f_2 \sum_j f_j w_{2j} + \cdots +
+	f_n^2 \sum_j w_{nj} - f_n \sum_j f_j w_{nj} \\ \\
+&= 	\bigg[ f_1^2 \sum_j w_{1j} + \cdots + f_n^2 \sum_j w_{nj} \bigg]
+	+ \bigg[- f_1 \sum_j f_j w_{1j} - \cdots - f_n \sum_j f_j w_{nj}  \bigg] \\ \\
+&= \bigg[ \sum_{i, j} f_i^2 w_{ij} \bigg]
+	- \bigg[ \sum_{i, j} f_i f_j w_{ij} \bigg] \\ \\
+&= \bigg[ \frac{1}{2} \sum_{i, j} f_i^2 w_{ij} +
+			\frac{1}{2} \sum_{i, j} f_j^2 w_{ij} \bigg] +
+   \frac{1}{2}\bigg[ -2 \sum_{i, j} f_i f_j w_{ij} \bigg] \\ \\
+&= \frac{1}{2} \bigg[ \sum_{i, j} f_i^2 w_{ij}
+ 						-2 \sum_{i, j} f_i f_j w_{ij}
+ 						+ \sum_{i, j} f_j^2 w_{ij} \bigg] \\ \\
+&= \frac{1}{2} \bigg[ \sum_{i, j} f_i^2 w_{ij}
+						-2 f_i f_j w_{ij}
+						+ f_j^2 w_{ij} \bigg] \\ \\
+&= \frac{1}{2} \sum_{i, j} w_{ij}(f_i - f_j)^2 \hspace{4ex} _\blacksquare					
+\end{aligned}$$
+
+<br>
+
+Before this next proof, we need to recall a few things from linear algebra.
+
+Suppose $M$ is a square matrix and $\lambda$ is an eigenvalue of $M$
+
+Define $E_\lambda = \{ \vec{v} | M \vec{v} = \lambda \vec{v} \}$
+
+$dim(E_\lambda)$ is the <i><u>geometric multiplicity</i></u> of $\lambda$
+
+In other words, the geometric multiplicity of $\lambda$ is the dimension of the span of eigenvectors corresponding to the eigenvalue $\lambda$
+
+Also recall that the <i><u>algebraic multiplicity</i></u> of $\lambda$ is simply the number of times the eigenvalue $\lambda$ appears in the spectrum of $M$
+
+Because our Laplacian matrix $L_G$ is diagonalizable (again applying the Spectral Theorem here), it turns out that the algebraic multiplicity is equal to the geometric multiplicity, so from now on, we will simply use the term <i><u>multiplicity</i></u>.
+
+With that, on to the next proof.
+
+<br>
+
+<b><u>Claim</b></u>
+
+The multiplicity of $0$ as an eigenvalue of $L_G$ equals the number of connected components of $G$
+
+<i>Proof</i>
+
+Suppose $G$ has exactly $k$ connected components $A_1, A_2, \ldots, A_k$ where
+$$ A_1 \cup A_2 \cup \cdots \cup A_k = V \hspace{2ex} \text{ and } \hspace{2ex}
+\forall i \neq j \hspace{1ex} A_i \cap A_j = \emptyset$$
+
+(e.g. no edge connects $A_i$ and $A_j$)
+
+Let's re-order the vertices such that the vertices in $A_1$ come first, then the vertices in $A_2$, etc. The resulting matrix looks something like:
+
+$$L_G =
+\begin{bmatrix}
+[A_1 \text{non-zero weights}] & & & 0 \\
+0 & [A_2 \text{non-zero weights}] & & \\
+ & & \ddots & & \\
+ & & & [A_k \text{non-zero weights}]
+\end{bmatrix}$$
+
+If you are not convinced of this, without loss of generality, let's look at the first row. We know $A_1$ has non-zero weights connecting all of the values in $A_1$ (remember we assumed $A_1$ to be a connected component). We also know $A_1 \cap A_j = \emptyset$ $(j \neq 1)$, which means all those weights are $0$.
+
+Thus, $\boldsymbol{1}_{A_1}, \boldsymbol{1}_{A_2}, \ldots, \boldsymbol{1}_{A_n}$ are linearly independent eigenvectors of $L_G$ all with the same eigenvalue $\lambda = 0$
+
+Therefore, $\boldsymbol{1}_{A_1}, \boldsymbol{1}_{A_2}, \ldots, \boldsymbol{1}_{A_n}$ are all in $E_0$, which means $dim(E_0) \geqslant k$
+
+Now, we will show $dim(E_0) \leqslant k$
+
+Suppose $f \in E_0$
+
+Thus, $Lf = \vec{0}$, which means $f^T Lf = 0$
+
+By the previous theorem we proved, this means:
+$$0 = f^T Lf = \frac{1}{2} \sum_{i, j} w_{ij}(f_i - f_j)^2$$
+
+Just as before, the weights between vertices in different connected components are $0$ by assumption. Looking within connected components, $w_{ij} > 0$ by assumption.
+
+Since $(f_i - f_j)^2 \geqslant 0$ $\forall i, j$, this means the only way for this sum to be zero is $f_i = f_j$ $\forall i, j$ where $i$ and $j$ are in the same connected component.
+
+Therefore, the value of $f$ on each vertex in $A_i$ is some constant $c_i$
+
+which means we can express $f$ as:
+$$f = c_1 \cdot \boldsymbol{1}_{A_1} + c_2 \cdot \boldsymbol{1}_{A_2} + \cdots + c_k \cdot \boldsymbol{1}_{A_k}$$
+
+Thus, $f \in span \{ \boldsymbol{1}_{A_1}, \boldsymbol{1}_{A_2}, \ldots, \boldsymbol{1}_{A_n} \}$
+
+Since $f$ was arbitrary, $dim(E_0) \leqslant k$
+
+Therefore, $dim(E_0) = k$, which means $0$ has multiplicity $k$ in $L_G \hspace{4ex} _\blacksquare$
+
+<br>
+
+So now we can write the eigenvalues of $L_G$ as:
+
+$$ 0 = \lambda_1 =  \cdots = \lambda_k < \lambda_{k + 1} \leqslant \cdots \leqslant \lambda_n$$
+where $k$ is the number of connected components of $G$
+
+Also, define the <u><i>Fiedler Value</u></i> of $L_G$ to be the first non-zero eigenvalue.
+
+For our next proof we need one more definition.
+
+Define $f_A$ via:
+
+$$(f_A)_i = 
+\begin{cases}
+\sqrt{\frac{|\bar{A}|}{|A|}}	&	v_i \in A \\
+-\sqrt{\frac{|A|}{|\bar{A}|}}	&	v_i \in \bar{A}
+\end{cases}$$
+
+<br>
+
+<b><u>Claim</u></b>
+
+$f_A^T L f_A = \frac{1}{n} \cdot RatioCut(A)$
+
+<i>Proof</i>
+
+We just proved that
+$f^T L f = \frac{1}{2} \sum_{i, j} w_{ij}(f_i -f_j)^2$
+
+Therefore, $f_A^T L f_A = \frac{1}{2} \sum_{i, j} w_{ij}(f_A(i) - f_A(j))^2$
+
+By construction of $f_A$, whenever $i, j \in A$ or $i, j \in \bar{A}$, $f_A(i) - f_A(j) = 0$
+
+We can thus write $f_A^T L f_A$ as:
+
+$$\begin{aligned}
+f_A^T L f_A
+&= \frac{1}{2} \sum_{i \in A, j \in \bar{A}} w_{ij} (f_A(i) - f_A(j))^2 + 
+	\frac{1}{2} \sum_{i \in \bar{A}, j \in A} w_{ij} (f_A(i) - f_A(j))^2 \\ \\	
+&= \frac{1}{2} \sum_{i \in A, j \in \bar{A}} w_{ij} 
+	\bigg( \sqrt{\frac{|\bar{A}|}{|A|}} - -\sqrt{\frac{|A|}{|\bar{A}|}} \bigg)^2 +
+	\frac{1}{2} \sum_{i \in \bar{A}, j \in A} w_{ij} 
+	\bigg( -\sqrt{\frac{|A|}{|\bar{A}|}} - \sqrt{\frac{|\bar{A}|}{|A|}} \bigg)^2	
+	\\ \\
+&= \frac{1}{2}
+	\bigg( \sqrt{\frac{|\bar{A}|}{|A|}} + \sqrt{\frac{|A|}{|\bar{A}|}} \bigg)^2 \cdot
+	cut(A) +
+	\frac{1}{2}
+	\bigg( \sqrt{\frac{|A|}{|\bar{A}|}} + \sqrt{\frac{|\bar{A}|}{|A|}} \bigg)^2 \cdot
+	cut(\bar{A})	
+	\\ \\
+&= cut(A) \cdot
+		\bigg( \sqrt{\frac{|\bar{A}|}{|A|}} +
+		\sqrt{\frac{|A|}{|\bar{A}|}}\bigg)^2
+		\hspace{4ex}
+		[cut(A) = cut(\bar{A})] \\ \\
+&= cut(A) \cdot
+		\bigg( \sqrt{\frac{|\bar{A}|}{|A|}}^2 +
+		2 \cdot \sqrt{\frac{|\bar{A}|}{|A|}} \cdot \sqrt{\frac{|A|}{|\bar{A}|}} +
+		\sqrt{\frac{|A|}{|\bar{A}|}}^2\bigg) \\ \\	
+&= cut(A) \cdot
+		\bigg(\frac{|\bar{A}|}{|A|} +
+		2 +
+		\frac{|A|}{|\bar{A}|}\bigg) \\ \\		
+&= cut(A) \cdot
+		\bigg(\frac{n - |A|}{|A|} +
+		\frac{|A| + n - |A|}{|\bar{A}|} + 1\bigg) \\ \\		
+&= cut(A) \cdot
+		\bigg(\frac{n}{|A|} - 1 +
+		\frac{n}{|\bar{A}|} + 1\bigg) \\ \\						
+&= n \cdot cut(A)
+		\bigg(\frac{1}{|A|} +
+		\frac{1}{|\bar{A}|}\bigg) \\ \\
+&= n \cdot RatioCut(A) \\ \\					
+\end{aligned}$$
+
+Thus, $RatioCut(A) = \frac{1}{n} f_A^T L f_A \hspace{4ex} _\blacksquare$
+
+<br>
+
+We just need one more simple proof before we can put this all together.
+
+<b><u>Claim</u></b>
+
+$f_A \bullet \boldsymbol{1}_n = 0$
+
+<i> Proof </i>
+
+$$\begin{aligned}
+f_A \bullet \boldsymbol{1}_n &= |A| \sqrt{\frac{|\bar{A}|}{|A|}}
+	- |\bar{A}| \sqrt{\frac{|A|}{|\bar{A}|}} \\ \\
+&= \sqrt{\frac{|\bar{A}| \cdot |A|^2}{|A|}}
+	- \sqrt{\frac{|A| \cdot |\bar{A}|^2}{|\bar{A}|}} \\ \\
+&= \sqrt{|\bar{A}| \cdot |A|} - \sqrt{|\bar{A}| \cdot |A|} \\ \\
+&= 0 \hspace{4ex} _\blacksquare
+\end{aligned}$$
+
+<br>
+
+## Spectral Clustering with 2 Clusters as an Optimization Problem
+
+Our goal right now is to divide a data set into two clusters while keeping the clusters balanced in size, which gave us $RatioCut$
+
+We showed that $f_A^T L f_A = \frac{1}{n} \cdot RatioCut(A)$ where 
+$$(f_A)_i = 
+\begin{cases}
+\sqrt{\frac{|\bar{A}|}{|A|}}	&	v_i \in A \\
+-\sqrt{\frac{|A|}{|\bar{A}|}}	&	v_i \in \bar{A}
+\end{cases}$$
+
+We also know $f_A$ is orthogonal to the all ones vector $\boldsymbol{1}_V$
+
+With this, we can rephrase the $RatioCut$ problem as a constrained optimization problem.
+
+We want to find:
+$$\begin{aligned}
+&\underset{A \subseteq V}{argmin} \hspace{1ex} RatioCut(A) \\
+&= \underset{A \subseteq V}{argmin} \hspace{1ex} \frac{1}{n} f_A^T L f_A \\
+&= \underset{A \subseteq V}{argmin} \hspace{1ex} f_A^T L f_A
+\end{aligned}$$
+
+subject to the constraint $f_A \bullet \boldsymbol{1}_V = 0$
+
+This problem is NP-hard, but we can relax this problem to:
+$$\underset{A \subseteq V}{argmin} \hspace{1ex} f^T L f$$
+
+subject to the constraint $f \bullet \boldsymbol{1}_V = 0$ 
+
+Conveniently for us, by the Rayleigh-Ritz Theorem, this $argmin$ is the eigenvector corresponding to the Fiedler value. See the [Appendix] for more discussion and proof of the Rayleigh-Ritz Theorem.
+
+To turn this $f$ into an assignment of points in two clusters, remember our original construction of $f_A$. In particular, recall that $f_A$ maps vertices in $A$ to positive values, and $f_A$ maps vertices in $\bar{A}$ to negative values.
+
+At this point, we could actually assign clusters based on whether $f$ is positive or negative, but to be more cautious, we can use K-means with $k = 2$.
+
+It's important to note here that we are <i>hoping</i> that the answer $f$ from the relaxed problem is close to the true answer $f_A$. This certainly is not always the case, as discussed in Section 5.4 of [von Luxburg (2007)](https://arxiv.org/pdf/0711.0189.pdf).
+
+<br>
+
+## Generalized Spectral Clustering
+
+Let's now generalize our understanding of spectral clustering to $k$ dimensions.
+
+## Modifications of definitions
+
+First, let's extend our definition of $RatioCut$ to $k$ dimensions:
+
+$$RatioCut(A_1, \ldots, A_k)
+= \sum_{i = 1}^k \frac{cut(A_i)}{|A_i|}$$
+
+Now, suppose we partition $V$ into $k$ sets $A_1, A_2, \ldots, A_k$
+
+Let's define $k$ indicator vectors $h_1, h_2, \ldots, h_k$ where the $i^{th}$ element of $h_\ell$ is expressed as:
+
+$$(h_\ell)_i = 
+\begin{cases}
+\frac{1}{\sqrt{|A_\ell|}} & v_i \in A_\ell \\
+0 & \text{otherwise}
+\end{cases}$$
+
+for $i = 1, 2, \ldots, n$
+
+and define $H$ to be:
+
+$$\begin{bmatrix}
+| & | & & | \\
+h_1 & h_2 & \cdots & h_k \\
+| & | & & | \\
+\end{bmatrix}$$
+
+Note that $H$ is an orthogonal matrix by construction $(H^T H) = I_n$
+
+<br>
+
+## Proofs with K Clusters
+
+<b><u>Claim</u></b>
+
+$h_\ell^T L h_\ell = \frac{cut(A_\ell)}{|A_\ell|}$
+
+<i>Proof</i>
+
+Recall we proved $f^T L f = \frac{1}{2} \sum_{i, j} w_{ij} (f(i) - f(j))^2$ for any $f$
+
+Thus, we know $h_\ell^T L h_\ell =  \frac{1}{2} \sum_{i, j} w_{ij} (h_\ell(i) - h_\ell(j))^2$
+
+By construction of $h_\ell$, if $i, j \in A_\ell$ or $i, j \in \bar{A}_\ell$, then
+$h_\ell(i) - h_\ell(j) = 0$
+
+We can therefore rewrite $h_\ell^T L h_\ell$ as:
+
+$$\begin{aligned}
+h_\ell^T L h_\ell
+&= \frac{1}{2}
+    \sum_{i \in A_\ell, j \in \bar{A}_\ell} w_{ij} (h_\ell(i) - 0)^2 +
+    \frac{1}{2}
+    \sum_{i \in \bar{A}_\ell, j \in A_\ell} w_{ij} (0 - h_\ell(j))^2 \\ \\
+&= \frac{1}{2}
+    \sum_{i \in A_\ell, j \in \bar{A}_\ell} w_{ij} \bigg( \frac{1}{\sqrt{|A_\ell|}} \bigg)^2 +
+    \frac{1}{2}
+    \sum_{i \in \bar{A}_\ell, j \in A_\ell} w_{ij} \bigg( -\frac{1}{\sqrt{|A_\ell|}} \bigg)^2 \\ \\
+&= \frac{1}{2}
+    \bigg( \frac{1}{|A_\ell|} \bigg) \cdot cut(A_\ell) +
+    \frac{1}{2}
+    \bigg( \frac{1}{|A_\ell|} \bigg) \cdot cut(\bar{A}_\ell) \\ \\    
+&= \frac{cut(A)}{|A_\ell|} \hspace{4ex} _\blacksquare
+\end{aligned}$$
+
+<br>
+
+<b><u>Claim</b></u>
+
+$(H^T L H)_{\ell \ell} = h_\ell^T L h_\ell$
+
+<i>Proof</i>
+
+The $\ell \ell^{th}$ element of $H^T L H$ is the result of multiplying the $\ell^{th}$ row of $H^T L$ with the $\ell^{th}$ column of $H$ $(h_\ell)$
+
+The $\ell^{th}$ row of $H^T L$ results from multiplying the $\ell^{th}$ row of $H^T$ $(h_\ell^T)$ by $L \hspace{4ex} _\blacksquare$
+
+<br>
+
+<b><u>Claim</b></u>
+
+$RatioCut(A_1, \ldots, A_k) = Tr(H^T L H) \hspace{4ex}$ $\bigg($where $Tr()$ is the trace of a matrix$\bigg)$
+
+<i>Proof</i>
+
+$$\begin{aligned}
+& Tr(H^T L H) \\
+&= \sum_{\ell = 1}^k (H^T L H)_{\ell \ell} \\
+&= \sum_{\ell = 1}^k (h_\ell^T L h_\ell) \\
+&= \sum_{\ell = 1}^k \frac{cut(A_\ell)}{|A_\ell|} \\
+&= RatioCut(A_1, \ldots, A_k) \hspace{4ex} _\blacksquare
+\end{aligned}$$
+
+<br>
+
+## Spectral Clustering with K Clusters as an Optimization Problem
+
+Recall our goal is to divide a data set into $k$ clusters while keeping the clusters balanced in size.
+
+We just proved that we can phrase this as a $RatioCut$ problem with an orthogonality constraint:
+
+$$\begin{aligned}
+& \underset{A_1, A_2, \ldots, A_k}{argmin} \hspace{1ex} RatioCut(A_1, A_2, \ldots, A_k) \\
+&= \underset{A_1, A_2, \ldots, A_k}{argmin} \hspace{1ex} Tr(H^T L H) \\
+\end{aligned}$$
+
+subject to the constraint $H^T H = I_n$
+
+Similar to our strategy with two clusters, we will relax $H$ to be any $n$ x $k$ matrix:
+
+$$\underset{H \in \mathbb{R}^{n \text{ x } k}}{argmin} \hspace{1ex} Tr(H^T L H)$$
+
+still subject to the constraint $H^T H = I_n$
+
+It turns out, by an extension of the Rayleigh-Ritz Theorem (see the [Appendix] for the proof), that the $H$ that minimizes this trace is:
+
+$$ H = 
+\begin{bmatrix}
+| & | &  & | \\
+\vec{v}_1 & \vec{v}_2 & \cdots & \vec{v}_k \\
+| & | &  & | \\
+\end{bmatrix}$$
+
+where $\vec{v}_1, \vec{v}_2, \ldots, \vec{v}_k$ are the $k$ eigenvectors corresponding to the $k$ smallest eigenvalues $\lambda_1 \leqslant \lambda_2 \leqslant \cdots \leqslant \lambda_k$ of $L$
+
+Just as we qualified this with two clusters, we are <i> hoping </i> that this answer will be close to the true answer, which will not necessarily hold.
+
+To turn this $H$ into an assignment of points in $k$ clusters, recall our construction of $H$. Each $h_\ell$ maps the vertices of only one $A_\ell$ to positive values, mapping all other vertices from $\bar{A}_\ell$ to $0$. Furthermore, all other $h_j$ should map the vertices of $A_\ell$ to $0$. Therefore, if this $H$ chosen under these relaxed constraints is close to the true answer, then we expect each vertex to have a positive value in only one of the $k$ dimensions (only one positive value in each row of $H$). This should result in $k$ clusters of points in $\mathbb{R}^k$.
+
+At this point, we could actually assign clusters based on which dimension is positive / which dimension has the largest positive value, but to be more cautious, we can use K-means with $k$ clusters.
+
+<br>
+
+## Implementing Spectral Clustering
+
+First, we must address how to create the weights between data points when we build the graph. I've implemented the unnormalized spectral clustering algorithm as described in von Luxburg (2007). I used the Gaussian similarity function to create the weights:
+
+$$s(x_i, x_j)
+= exp\bigg(- \frac{||x_i - x_j||^2}{2\sigma^2} \bigg)$$
+
+This results in points that are closer together having a larger similarity, and this similarity decays exponentially as the Euclidean distance between points increases.
+
+It's important to note that the choice of $\sigma$ substantially affects the performance of spectral clustering. In the context of the Gaussian similarity function, if the function decays too quickly or too slowly, then the $RatioCut$ that would result from a perfectly calibrated $\sigma$ might not look all that different from other cuts. Although this is not an issue with K-means, spectral clustering can outperform better with the proper calibration of $\sigma$, as I will demonstrate with several simple examples.
+
+The code is up on [my Github page](https://github.com/gjkoplik/spectral_clustering). The basic structure of my algorithm for assigning $n$ data points into $k$ clusters given a fixed $\sigma$ is as follows:
+
+- Build the $n$ x $n$ weight matrix using the Gaussian similarity function
+
+- Construct the $n$ x $n$ Laplacian matrix and find its eigenvalues and eigenvectors
+
+- Keep the $k$ eigenvectors corresponding to the $k$ smallest eigenvalues (note because I'm using the Gaussian similarity function, the resulting graph of the data using this algorithm is fully connected. Therefore, there will only be 1 eigenvalue equal to 0 / approximately equal to 0 due to computer error)
+
+- Cluster the $n$ rows of this $k$ x $n$ matrix (this is the $H$ matrix discussed above) using K-means into $k$ clusters
+
+- Output an $n$-dimensional numeric vector with values between 1 and $k$, representing each point's cluster assignment
+
+The results look much better than K-means for our more complicated examples:
+
+<img src="index_files/figure-html/unnamed-chunk-6-1.png" style="display: block; margin: auto;" />
+
+It also performs just as well for the examples that play nice with K-means:
+
+<img src="index_files/figure-html/unnamed-chunk-7-1.png" style="display: block; margin: auto;" />
+
+# 3-Dimensional Example: The Swiss Roll
+
+As one more example of spectral clustering's "respect" for the structure of data when partitioning it, I include the Swiss Roll as a 3-dimensional example. You'll never guess how they came up with the [name](https://pioneerwoman.files.wordpress.com/2015/12/chocolate-swiss-roll-cake-15.jpg) for this data set.
+
+<center>
+![](./swiss_roll_combine.gif){width=80%}
+</center>
+
+Note how the resulting clusters when implementing K-means clustering fail to stay within 1 layer, which is to be expected when clustering based on Euclidean distance from a central point, but spectral clustering maintains this within-layer integrity.
+
+# Appendix
+
+Here, I will go through the set-up and proof of the Rayleigh-Ritz Theorem and one extension of it.
+
+Suppose $M$ is a real and symmetric $n$ x $n$ matrix.
+
+Let $\vec{x} \in \mathbb{R}^n$
+
+Define the <i><u>Rayleigh Quotient</i></u> $R_M: \mathbb{R}^n \mapsto \mathbb{R}$ via:
+$$R_M(\vec{x}) = \frac{\vec{x}^T M \vec{x}}{\vec{x}^T \vec{x}}$$
+
+<b><u>Thm</b></u> (Rayleigh-Ritz)
+
+Suppose $M$ is real and symmetric with spectrum $\vec{v}_1, \vec{v}_2, \ldots, \vec{v}_n$ and $\lambda_1 \geqslant \lambda_2 \geqslant \cdots \geqslant \lambda_n$
+
+Then the maximum value of $R_M$ is $\lambda_1$ and it's taken at $\vec{v}_1$
+
+Furthermore, the minimum value of $R_M$ is $\lambda_n$ and it's taken at $\vec{v}_n$
+
+<i> Proof </i>
+
+Let $\vec{u} \in \mathbb{R}^n$ where $||\vec{u}||^2 = 1$ be given
+
+Since $M$ is symmetric and real, by the Spectral Theorem, there exists unique $c_1, c_2, \ldots, c_n \in \mathbb{R}$ such that
+$\vec{u} = c_1 \vec{v}_1 + c_2 \vec{v}_2 + \cdots + c_n \vec{v}_n$
+
+(Note $c_1^2 + c_2^2 + \cdots + c_n^2 = 1$)
+
+We can express $R_M(\vec{u})$ as:
+$$\begin{aligned}
+R_M(\vec{u}) =
+\vec{u}^T M \vec{u}
+&= (c_1 \vec{v}_1^T + \cdots + c_n \vec{v}_n^T) M
+  (c_1 \vec{v}_1 + \cdots + c_n \vec{v}_n) \\
+&= (c_1 \vec{v}_1^T + \cdots + c_n \vec{v}_n^T)
+  (\lambda_1 \cdot c_1 \vec{v}_1 + \cdots + \lambda_n \cdot c_n \vec{v}_n) \\
+\end{aligned}$$
+
+By the Spectral Theorem, $\forall i \neq j, \vec{v}_i \bullet \vec{v}_j = 0$ and $\forall i, \vec{v}_i \bullet \vec{v}_i = 1$, giving us:
+$$R_M(\vec{u})
+= \lambda_1 c_1^2 + \cdots + \lambda_n c_n^2$$
+
+Thus, we <i>maximize</i> $R_M$ by setting $c_1 = 1$ and $c_2 = c_3 = \cdots = c_n = 0$, giving us a value of $\lambda_1$ at $\vec{u} = \vec{v}_1$
+
+and we <i>minimize</i> $R_M$ by setting $c_n = 1$ and $c_1 = c_2 = \cdots = c_{n-1} = 0$, giving us a value of $\lambda_n$ at $\vec{u} = \vec{v}_n \hspace{4ex} _\blacksquare$
+
+<br>
+
+<b><u>Thm</b></u> (Extending Rayleigh-Ritz)
+
+Let $M$ be an $n$ x $n$ real, symmetric matrix with spectrum $\vec{v}_1, \vec{v}_2, \ldots, \vec{v}_n$ and $\lambda_1 \leqslant \lambda_2 \leqslant \cdots \leqslant \lambda_n$
+
+(Note that the eigenvalues are now placed in <i>increasing</i> order as opposed to decreasing order, which was used above for the proof of the Rayleigh-Ritz Theorem)
+
+Let $X$ be an $n$ x $k$ real, orthogonal matrix ($X^T X = I_k$)
+
+Then the minimum value of $tr(X^T M X)$ is $\lambda_1 + \lambda_2 + \cdots + \lambda_k$ and the matrix that results in this minimum value is:
+$$\begin{bmatrix}
+| & | &  & | \\
+\vec{v}_1 & \vec{v}_2 & \cdots & \vec{v}_k \\
+| & | &  & | \\
+\end{bmatrix}$$
+
+<i>Proof</i>
+
+We can express $X$ as:
+
+$$X =\begin{bmatrix}
+| & | &  & | \\
+\vec{x}_1 & \vec{x}_2 & \cdots & \vec{x}_k \\
+| & | &  & | \\
+\end{bmatrix}$$
+
+where we have yet to put any restrictions on $\vec{x}_1, \vec{x}_2, \ldots, \vec{x}_k$
+
+We can express the $ii^{th}$ element of the diagonal of $X^T M X$ as $\vec{x}_i^T M \vec{x}_i$ (for further justification of this, see the similar proof in the [Proofs with K Clusters] section)
+
+Since $X$ is orthogonal, $||\vec{x}_1||^2 = ||\vec{x}_2||^2 = \cdots = ||\vec{x}_k||^2 = 1$
+
+We now have the necessary set-up to prove this claim by induction.
+
+Suppose $k = 1$
+
+By the Rayleigh-Ritz Theorem, the minimizing value of $(X^T M X)_{11} = \vec{x}_1^T M \vec{x}_1$ is $\lambda_1$, and this value occurs when $\vec{x}_1 = \vec{v}_1$
+
+Therefore, the minimizing value of $tr(X^T M X)$ is $\lambda_1$, and this value occurs when $X = \vec{v}_1$
+
+Now, suppose $k = 2$
+
+The proof for the $k = 1$ case still holds here, giving us $\vec{x}_1 = \vec{v}_1$
+
+Since $X$ is orthogonal, we know $\vec{x}_2 \bullet \vec{v}_1 = 0$ and $||\vec{x}_2||^2 = 1$
+
+By this orthogonality constraint and the Rayleigh-Ritz Theorem, the minimizing value of $(X^T M X)_{22} = \vec{x}_2^T M \vec{x}_2$ is $\lambda_2$ when $\vec{x}_2 = \vec{v}_2$
+
+Therefore, the minimizing value of $tr(X^T M X)$ is $\lambda_1 + \lambda_2$, and this value occurs when:
+
+$$X =\begin{bmatrix}
+| & | \\
+\vec{v}_1 & \vec{v}_2 \\
+| & | \\
+\end{bmatrix}$$
+
+Now, assume for $k = j$, the minimizing value of $tr(X^T M X)$ is $\lambda_1 + \lambda_2 + \cdots + \lambda_j$, and this value occurs when: $$X =\begin{bmatrix}
+| & | &  & | \\
+\vec{v}_1 & \vec{v}_2 & \cdots & \vec{v}_j \\
+| & | &  & | \\
+\end{bmatrix}$$
+
+Suppose $k = j + 1$
+
+We can express $X$ as:
+
+$$X =\begin{bmatrix}
+| & | &  & | & | \\
+\vec{x}_1 & \vec{x}_2 & \cdots & \vec{x}_j & \vec{x}_{j + 1} \\
+| & | &  & | & | \\
+\end{bmatrix}$$
+
+By our induction hypothesis, we will minimize $tr(X^T M X)$ by setting the first $j$ columns of $X$ as:
+
+$$\vec{x}_i = \vec{v}_i \hspace{2ex} \forall i \in \{ 1, 2, \ldots, j \}$$
+
+Since $X$ is orthogonal, we know $\vec{x}_{j + 1} \perp span\{ \vec{v}_1, \vec{v}_2, \ldots, \vec{v}_j \}$ and $||\vec{x}_{j + 1}||^2 = 1$
+
+By the Rayleigh-Ritz Theorem and this orthogonality constraint, the minimizing value of $(X^T M X)_{(j+1)(j+1)} = \vec{x}_{j+1}^T M \vec{x}_{j+1}$ is $\lambda_{j+1}$ when
+$\vec{x}_{j+1} = \vec{v}_{j+1}$
+
+Therefore, the minimizing value of $tr(X^T M X)$ is $\lambda_1 + \lambda_2 + \cdots + \lambda_j + \lambda_{j + 1}$, and this value occurs when:
+
+$$X =\begin{bmatrix}
+| & | &  & | & | \\
+\vec{v}_1 & \vec{v}_2 & \cdots & \vec{v}_j & \vec{v}_{j + 1} \\
+| & | &  & | & | \\
+\end{bmatrix} \hspace{4ex} _\blacksquare$$
+
+<br>
+
+# Acknowledgements
+
+Most of this material was covered in Paul Bendich's High-Dimensional Data Analysis Class (Math 465) at Duke in the Fall of 2017, so I'd like to thank Paul for giving clear lectures on a complicated topic.
+
+I also referenced a [paper](https://arxiv.org/pdf/0711.0189.pdf) by von Luxburg (2007) in writing this document.$\hspace{4ex} _\blacksquare$

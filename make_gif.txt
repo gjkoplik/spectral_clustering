@@ -1,6 +1,10 @@
-# making the gif from the images
+# making the gif from the images (note use "convert" not "magick" on Macs
 
 magick -delay 15 *.png -crop 450x500+185+100 +repage -pointsize 20 -annotate +85+430 "Swiss Roll with Spectral Clustering" animation_sc.gif
 
 
 magick -delay 15 *.png -crop 450x500+185+100 +repage -pointsize 20 -annotate +125+430 "Swiss Roll with K-Means" animation_kmeans.gif
+
+# combining R-modified gif into one gif side-by side
+# turns out it's way easier to feed in the two separate gifs
+# 	into an online converter...

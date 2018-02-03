@@ -846,7 +846,7 @@ ggplot(kmeans_nice) +
 As one more example of spectral clustering's "respect" for the structure of data when partitioning it, I include the Swiss Roll as a 3-dimensional example. You'll never guess how they came up with the [name](https://pioneerwoman.files.wordpress.com/2015/12/chocolate-swiss-roll-cake-15.jpg) for this data set.
 
 <center>
-![](./make_gifs/swiss_roll_sc_animate.gif){width=40%}$\hspace{4ex}$![](./make_gifs/swiss_roll_kmeans_animate.gif){width=40%}
+![](./swiss_roll_combine.gif){width=80%}
 </center>
 
 Note how the resulting clusters when implementing K-means clustering fail to stay within 1 layer, which is to be expected when clustering based on Euclidean distance from a central point, but spectral clustering maintains this within-layer integrity.
